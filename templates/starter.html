@@ -2,10 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Hello</title>
+    <title>Face Detect</title>
 </head>
 <body>
-    <video autoplay></video>
+    <video id="webcam" autoplay style="display:none;"></video>
+    <canvas id="canvas"></canvas>
+     <script src="{{ url_for('static', filename='js/jsfeat-min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

@@ -1,14 +1,32 @@
 ;(function (window, document) {
   "use strict";
 
-  var FaceDetect = function() {
+  /*
+   * FaceDetect
+   * A class for detecting faces
+   * @param DOMObject webcam
+   * @param DOMObject canvas
+   */
+  var FaceDetect = function(webcam, canvas) {
     var self = this;
 
     if (!self.hasGetUserMedia()) {
       throw("getUserMedia() is not supported in your browser");
     }
 
+    self.webcam = webcam;
+    self.canvas = canvas;
+
+    //Init fallback functions
     navigator.FaceDetectUserMedia = (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia);
+    window.requestAnimFrame = (function(){
+      return  window.requestAnimationFrame       ||
+              window.webkitRequestAnimationFrame ||
+              window.mozRequestAnimationFrame    ||
+              function( callback ){
+                window.setTimeout(callback, 1000 / 60);
+              };
+    })();
 
     self.initCamera();
   }
@@ -21,20 +39,43 @@
   FaceDetect.prototype.initCamera = function() {
     var self = this;
 
-    self.video = document.querySelector('video');
+    var attempts = 0;
+    var findVideoSize = function() {
+      if(self.webcam.videoWidth > 0 && self.webcam.videoHeight > 0) {
+        self.cameraHeight = self.webcam.videoHeight;
+        self.cameraWidth = self.webcam.videoWidth;
+        self.ready();
+      } else {
+          if(attempts < 10) {
+            attempts++;
+            window.setTimeout(findVideoSize.bind(self), 200);
+          } else {
+            self.cameraHeight = 480;
+            self.cameraWidth = 640;
+            self.ready();
+          }
+      }
+    };
 
     navigator.FaceDetectUserMedia({video: true, audio: false}, function(localMediaStream) {
-      self.video.src = window.URL.createObjectURL(localMediaStream);
+      self.webcam.src = window.URL.createObjectURL(localMediaStream);
 
-      self.video.onloadedmetadata = function(e) {
-        console.log("Loaded stream");
-      };
+      self.webcam.addEventListener("loadeddata", function() {
+        console.log("Loaded video");
+        findVideoSize();
+      })
     }, function() {
       throw("Couldn't load stream")
     });
   };
 
+  FaceDetect.prototype.ready = function() {
+    var self = this;
 
-  var detection = new FaceDetect();
+    console.log(self.cameraHeight, self.cameraWidth);
+  };
+
+
+  var detection = new FaceDetect(document.getElementById("webcam"), document.getElementById("canvas"));
 
 }(this, document));
