@@ -6,8 +6,9 @@
 </head>
 <body>
     <video id="webcam" autoplay style="display:none;"></video>
-    <canvas id="canvas"></canvas>
+    <canvas id="canvas" width="640" height="480"></canvas>
      <script src="{{ url_for('static', filename='js/jsfeat-min.js') }}"></script>
+     <script src="{{ url_for('static', filename='js/face-classifiers.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
