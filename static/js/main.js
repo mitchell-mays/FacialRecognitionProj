@@ -17,6 +17,9 @@
     self.webcam = webcam;
     self.canvas = canvas;
 
+    self.props = [];
+    self.propTypes = {};
+
     self.maxWorkSize = 160;
     //Change detected face if it changes by a certain amount
     self.rectChangeThresh = 4;
@@ -32,6 +35,66 @@
     self.polyfills();
 
     self.initCamera();
+  }
+
+  /**
+   * Add new prop to list
+   * @param String url
+   * @param String type
+   */
+  FaceDetect.prototype.addProp = function(url, type) {
+    var self = this;
+
+    if (!(type in self.propTypes)) throw("Prop must be of an allowed type");
+
+    var image = new Image();
+    image.src = url;
+    //Only add the image if it loads
+    image.addEventListener("load", function() {
+      self.props.push({
+        "image": image,
+        "type": type
+      })
+    })
+
+    return true;
+  }
+
+  /**
+   * Add new prop type
+   * @param String name
+   * @param Float originX
+   * @param Float originY
+   * @param String ratio (width, height)
+   */
+  FaceDetect.prototype.addPropType = function(name, originX, originY, ratio) {
+    var self = this;
+
+    if (originX < 0 || originX > 1 || originY < 0 || originY > 1) {
+      throw("Origin must be a float between 0 and 1")
+    }
+
+    if (ratio !== "width" && ratio !== "height") throw("Ratio must be based upon width or height");
+
+    self.propTypes[name] = {
+      "originX": originX,
+      "originY": originY,
+      "ratio": ratio
+    };
+
+    return true;
+  }
+
+  FaceDetect.prototype.drawProps = function(rectX, rectY, rectWidth, rectHeight) {
+    var self = this;
+
+    var prop, i, originX, originY, type;
+
+    for (i = 0; i < self.props.length; i++) {
+      prop = self.props[i];
+
+      self.ctx.drawImage(prop["image"], rectX, rectY, rectWidth, rectHeight);
+    }
   }
 
   FaceDetect.prototype.polyfills = function() {
@@ -223,6 +286,9 @@
       rectWidth = (r.width * sc) | 0;
       rectHeight = (r.height * sc) | 0
 
+      //Draw the props
+      self.drawProps(rectX, rectY, rectWidth, rectHeight);
+
       //Draw face rect on canvas
       if (self.debug) self.ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
 
@@ -234,5 +300,9 @@
 
 
   var detection = new FaceDetect(document.getElementById("webcam"), document.getElementById("canvas"));
+
+  detection.addPropType("mask", 0.5, 0.5, "height");
+
+  detection.addProp("/static/SVGS/war-face-mask.svg", "mask");
 
 }(this, document));
