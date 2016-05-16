@@ -10,7 +10,6 @@
   var FaceDetect = function(webcam, canvas) {
     var self = this;
 
-
     if (!self.hasGetUserMedia()) {
       throw("getUserMedia() is not supported in your browser");
     }
@@ -19,21 +18,36 @@
     self.canvas = canvas;
 
     self.maxWorkSize = 160;
-    self.currRect = null;
+    //Change detected face if it changes by a certain amount
     self.rectChangeThresh = 4;
 
+    // Range of rotation of faces that should be detected
+    // In radians
+    self.rotationRange = 1;
+    self.rotationStep = 0.5;
+
+    self.debug = true;
+
     //Init fallback functions
-    navigator.FaceDetectUserMedia = (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia);
-    window.requestAnimFrame = (function(){
-      return  window.requestAnimationFrame       ||
-              window.webkitRequestAnimationFrame ||
-              window.mozRequestAnimationFrame    ||
-              function( callback ){
-                window.setTimeout(callback, 1000 / 60);
-              };
-    })();
+    self.polyfills();
 
     self.initCamera();
+  }
+
+  FaceDetect.prototype.polyfills = function() {
+    var self = this;
+
+    if (!("FaceDetectUserMedia" in navigator)) navigator.FaceDetectUserMedia = (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia);
+    if (!("requestAnimFrame" in window)) {
+      window.requestAnimFrame = (function(){
+        return  window.requestAnimationFrame       ||
+                window.webkitRequestAnimationFrame ||
+                window.mozRequestAnimationFrame    ||
+                function( callback ){
+                  window.setTimeout(callback, 1000 / 60);
+                };
+      })();
+    }
   }
 
   FaceDetect.prototype.hasGetUserMedia = function() {
@@ -66,7 +80,6 @@
       self.webcam.src = window.URL.createObjectURL(localMediaStream);
 
       self.webcam.addEventListener("loadeddata", function() {
-        console.log("Loaded video");
         findVideoSize();
       })
     }, function() {
@@ -105,137 +118,118 @@
     window.requestAnimFrame(self.tick.bind(self));
 
     if (self.webcam.readyState === self.webcam.HAVE_ENOUGH_DATA) {
-      var rects = [];
-      var angles = [0, -0.5, 0.5];
+      //Draw newest input from webcam to canvas
       self.ctx.drawImage(self.webcam, 0, 0, self.canvas.width, self.canvas.height);
-      //self.ctx.drawImage(self.webcam, 0, 0, self.workCanvas.width, self.workCanvas.height);
 
-      var x = self.workCanvas.width / 2;
-      var y = self.workCanvas.height / 2;
-      var width = self.webcam.width;
-      var height = self.webcam.height;
+      var rects = [];
+      var originX = self.workCanvas.width / 2;
+      var originY = self.workCanvas.height / 2;
 
-      for (var i = 0; i < angles.length; i++) {
+      var halfAngleRange = self.rotationRange / 2;
 
-        //self.work_ctx.drawImage(self.webcam, 0, 0, self.workCanvas.width, self.workCanvas.height);
+      var angle, tempRects, imageData, pyr, currentRect, r, o; 
 
-        var angleInRadians = angles[i];
-        self.work_ctx.translate(x, y);
-        self.work_ctx.rotate(angleInRadians);
+      for (angle = -halfAngleRange; angle <= halfAngleRange; angle += self.rotationStep) {
+
+        //Translate and rotate current frame based upon current angle (in radians)
+        self.work_ctx.translate(originX, originY);
+        self.work_ctx.rotate(angle);
         self.work_ctx.drawImage(self.webcam, -self.workCanvas.width / 2, -self.workCanvas.height / 2, self.workCanvas.width, self.workCanvas.height);
-        self.work_ctx.rotate(-angleInRadians)
-        self.work_ctx.translate(-x, -y);
+        self.work_ctx.rotate(-angle)
+        self.work_ctx.translate(-originX, -originY);
     
-        var imageData = self.work_ctx.getImageData(0, 0, self.workCanvas.width, self.workCanvas.height);
+        // Grab image data from rotated canvas
+        imageData = self.work_ctx.getImageData(0, 0, self.workCanvas.width, self.workCanvas.height);
 
+        // Run face classifiers on captured image data
         jsfeat.imgproc.grayscale(imageData.data, self.workCanvas.width, self.workCanvas.height, self.img_u8);
-
-        var pyr = jsfeat.bbf.build_pyramid(self.img_u8, 24*2, 24*2, 4);
-
-        var tempRects = jsfeat.bbf.detect(pyr, jsfeat.bbf.face_cascade);
-
-        tempRects = jsfeat.bbf.group_rectangles(tempRects, 1);
-
+        pyr = jsfeat.bbf.build_pyramid(self.img_u8, 24*2, 24*2, 4);
+        tempRects = jsfeat.bbf.group_rectangles(jsfeat.bbf.detect(pyr, jsfeat.bbf.face_cascade), 1);
         
-        for (var currentRect = 0; currentRect < tempRects.length; currentRect++){
-            tempRects[currentRect].x = tempRects[currentRect].x-x;
-            tempRects[currentRect].y = tempRects[currentRect].y-y;
-            //console.log(tempRects[currentRect].x);
-            //console.log(tempRects[currentRect].y);
+        //Translate found faces to coordinates of image
+        for (currentRect = 0; currentRect < tempRects.length; currentRect++){
+            tempRects[currentRect].x = tempRects[currentRect].x - originX;
+            tempRects[currentRect].y = tempRects[currentRect].y - originY;
 
-            var r = Math.sqrt(Math.pow(tempRects[currentRect].x,2) + Math.pow(tempRects[currentRect].y,2));
-            var o = Math.atan(tempRects[currentRect].y/tempRects[currentRect].x);
+            //Calculate radius of rotated boxes
+            r = Math.sqrt(Math.pow(tempRects[currentRect].x, 2) + Math.pow(tempRects[currentRect].y, 2));
+            //Calculate original origin
+            o = Math.atan(tempRects[currentRect].y / tempRects[currentRect].x);
 
             if (tempRects[currentRect].x < 0){
               o = o - Math.PI;
             }
 
-            //console.log(tempRects[currentRect].x + r * Math.cos(angles[i]));
-            //console.log(tempRects[currentRect].y + r * Math.sin(angles[i]));
+            //Translate x and y coords to non rotated image
+            tempRects[currentRect].x = (r * Math.cos(o - angle));
+            tempRects[currentRect].y = (r * Math.sin(o - angle));
 
-            //console.log(tempRects[currentRect].x);
-            //console.log(tempRects[currentRect].y);
-
-            tempRects[currentRect].x = (r * Math.cos(o - angles[i]));
-            tempRects[currentRect].y = (r * Math.sin(o - angles[i]));
-
-            //console.log(tempRects[currentRect].x);
-            //console.log(tempRects[currentRect].y);
-
-            tempRects[currentRect]["angle"] = angles[i];
+            tempRects[currentRect]["angle"] = angle;
         }
-        
-        
-
         rects = rects.concat(tempRects);
-
       }
 
-      // draw only most confident one
+      // draw only most confident face
       self.drawFaces(rects, self.canvas.width / self.img_u8.cols, 1);
-
     }
   };
 
   FaceDetect.prototype.drawFaces = function(rects, sc, max) {
     var self = this;
+
+    //Sort rects by their confidence value
     var on = rects.length;
     if(on && max) {
-        jsfeat.math.qsort(rects, 0, on-1, function(a,b){return (b.confidence<a.confidence);})
+        jsfeat.math.qsort(rects, 0, on-1, function(a, b) { return (b.confidence < a.confidence); })
     }
     var n = max || on;
     n = Math.min(n, on);
-    var r;
 
-    //var x = self.workCanvas.width / 2;
-    //var y = self.workCanvas.height / 2;
-    var x = self.canvas.width / 2;
-    var y = self.canvas.height / 2;
+    var r, xChange, yChange, rectX, rectY, rectWidth, rectHeight;
+    var originX = self.canvas.width / 2;
+    var originY = self.canvas.height / 2;
 
     for(var i = 0; i < n; ++i) {
-          r = rects[i];
+      r = rects[i];
 
-          if (self.currRect == null){
-            self.currRect = r;
-          }
-          var totDiff = Math.abs(self.currRect.x - r.x) + Math.abs(self.currRect.x - r.x) + Math.abs(self.currRect.width - r.width) + Math.abs(self.currRect.height - r.height);
-          if (totDiff < self.rectChangeThresh){
-            r = self.currRect;
-          }
-          else{
-            self.currRect = r;
-          }
+      //Set the current rectangle if isn't set yet
+      if (typeof(self.currRect) === "undefined") self.currRect = r;
 
+      //Calculate if rectangle has changed significantly from previous one
+      var rectDiff = Math.abs(self.currRect.x - r.x) + Math.abs(self.currRect.x - r.x) + Math.abs(self.currRect.width - r.width) + Math.abs(self.currRect.height - r.height);
+      if (rectDiff < self.rectChangeThresh) {
+        r = self.currRect;
+      } else {
+        self.currRect = r;
+      }
 
+      //Change origin of canvas to center of image and rotate based on rotation of box
+      self.ctx.translate(originX, originY);
+      self.ctx.rotate(-r.angle);
 
-          self.currRect = r;
+      //Adjust for slight offsets based upon the angle
+      yChange = 0;
+      xChange = 0;
+      if (r.angle < 0) {
+        xChange = -1 * (r.width / 2);
+      } else if (r.angle > 0) {
+        yChange = -1 * (r.height / 2);
+        xChange = (r.width / 4);
+      }
 
-          self.ctx.translate(x, y);
-          //self.ctx.drawImage(self.webcam, -self.workCanvas.width / 2, -self.workCanvas.height / 2, self.workCanvas.width, self.workCanvas.height);
-          self.ctx.rotate(-r.angle);
-          //self.ctx.drawImage(self.webcam, -self.workCanvas.width / 2, -self.workCanvas.height / 2, self.workCanvas.width, self.workCanvas.height);
-          var yChange = 0;
-          var xChange = 0;
-          if (r.angle < 0) {
-            xChange = -1 * (r.width / 2);
-          }
-          else if (r.angle > 0){
-            yChange = -1 * (r.height / 2);
-            xChange = (r.width / 4);
-          }
+      //Calculate coordinates for face rectangle
+      rectX = ((r.x + xChange) * sc) | 0;
+      rectY = ((r.y + yChange) * sc) | 0;
+      rectWidth = (r.width * sc) | 0;
+      rectHeight = (r.height * sc) | 0
 
-          //self.ctx.strokeRect((r.x + xChange) | 0, (r.y + yChange) | 0, (r.width) | 0, (r.height) | 0);
+      //Draw face rect on canvas
+      if (self.debug) self.ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
 
-          //self.ctx.strokeRect(0, 0, self.workCanvas.width, self.workCanvas.height);
-          self.ctx.strokeRect(((r.x + xChange) * sc) | 0, ((r.y + yChange) * sc) | 0, (r.width * sc) | 0, (r.height * sc) | 0);
-          //console.log(r.x * sc);
-          //console.log(r.y * sc);
-          self.ctx.rotate(r.angle);
-          self.ctx.translate(-x, -y);
-        
+      //Translate canvas back to match the image
+      self.ctx.rotate(r.angle);
+      self.ctx.translate(-originX, -originY);        
     }
-
-
   };
 
 
