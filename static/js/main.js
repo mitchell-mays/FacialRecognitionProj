@@ -29,12 +29,18 @@
     self.rotationRange = 1;
     self.rotationStep = 0.5;
 
-    self.debug = true;
+    self.debug = false;
 
     //Init fallback functions
     self.polyfills();
 
     self.initCamera();
+  }
+
+  FaceDetect.prototype.toggleDebug = function() {
+    var self = this;
+
+    self.debug = !self.debug;
   }
 
   /**
@@ -51,9 +57,11 @@
     image.src = url;
     //Only add the image if it loads
     image.addEventListener("load", function() {
+      if (self.debug) console.log("Loaded prop:", image.src);
       self.props.push({
         "image": image,
-        "type": type
+        "type": type,
+        "active": true
       })
     })
 
@@ -70,8 +78,8 @@
   FaceDetect.prototype.addPropType = function(name, originX, originY, ratio) {
     var self = this;
 
-    if (originX < 0 || originX > 1 || originY < 0 || originY > 1) {
-      throw("Origin must be a float between 0 and 1")
+    if (originX < -1 || originX > 1 || originY < -1 || originY > 1) {
+      throw("Origin must be a float between -1 and 1")
     }
 
     if (ratio !== "width" && ratio !== "height") throw("Ratio must be based upon width or height");
@@ -83,18 +91,6 @@
     };
 
     return true;
-  }
-
-  FaceDetect.prototype.drawProps = function(rectX, rectY, rectWidth, rectHeight) {
-    var self = this;
-
-    var prop, i, originX, originY, type;
-
-    for (i = 0; i < self.props.length; i++) {
-      prop = self.props[i];
-
-      self.ctx.drawImage(prop["image"], rectX, rectY, rectWidth, rectHeight);
-    }
   }
 
   FaceDetect.prototype.polyfills = function() {
@@ -152,6 +148,8 @@
 
   FaceDetect.prototype.ready = function() {
     var self = this;
+
+    if (self.debug) console.log("Loaded webcam data");
 
     self.ctx = self.canvas.getContext('2d');
 
@@ -290,6 +288,7 @@
       self.drawProps(rectX, rectY, rectWidth, rectHeight);
 
       //Draw face rect on canvas
+      if (self.debug) self.ctx.strokeStyle = "rgb(0,255,0)";
       if (self.debug) self.ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
 
       //Translate canvas back to match the image
@@ -298,11 +297,48 @@
     }
   };
 
+  FaceDetect.prototype.drawProps = function(rectX, rectY, rectWidth, rectHeight) {
+    var self = this;
+
+    var prop, i, originX, originY, type, width, height;
+
+    for (i = 0; i < self.props.length; i++) {
+      prop = self.props[i];
+      if (!prop["active"]) continue;
+
+      type = self.propTypes[prop["type"]];
+
+      //Calculate origin based on origin of rectangle and origin of prop type
+
+      //Base size on width of rectangle
+      width = rectWidth;
+      height = rectHeight * (prop["image"].height / prop["image"].width);
+
+      originX = rectX + (type["originX"] * width);
+      originY = rectY + (type["originY"] * height);
+
+      //Draw image
+      self.ctx.drawImage(prop["image"], originX, originY, width, height);
+
+      // Draw box to demonstrate set size of image
+      if (self.debug) {
+        self.ctx.strokeStyle = "red";
+        self.ctx.strokeRect(originX, originY, width, height);
+      }
+    }
+  };
+
 
   var detection = new FaceDetect(document.getElementById("webcam"), document.getElementById("canvas"));
 
-  detection.addPropType("mask", 0.5, 0.5, "height");
+  detection.addPropType("mask", 0, -0.2, "width");
+  detection.addPropType("hat", 0, -1, "width");
 
   detection.addProp("/static/SVGS/war-face-mask.svg", "mask");
+  //detection.addProp("/static/SVGS/Top-Hat.svg", "hat");
+
+  document.getElementById("toggleDebug").addEventListener("change", function() {
+    detection.toggleDebug();
+  });
 
 }(this, document));
