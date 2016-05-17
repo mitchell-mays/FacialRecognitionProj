@@ -334,8 +334,8 @@
   detection.addPropType("mask", 0, -0.2, "width");
   detection.addPropType("hat", 0, -1, "width");
 
-  detection.addProp("/static/SVGS/war-face-mask.svg", "mask");
-  //detection.addProp("/static/SVGS/Top-Hat.svg", "hat");
+  //detection.addProp("/static/SVGS/war-face-mask.svg", "mask");
+  detection.addProp("/static/SVGS/Top-Hat.svg", "hat");
 
   document.getElementById("toggleDebug").addEventListener("change", function() {
     detection.toggleDebug();
